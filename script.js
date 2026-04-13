@@ -14,8 +14,10 @@ const CONFIG = {
 
 const app = initializeApp(CONFIG.FIREBASE_CONFIG);
 const db = getFirestore(app);
+let allProducts = [];
 
 async function compressAndEncodeImage(file) {
+    if (!file) return null;
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
@@ -66,6 +68,7 @@ window.switchTab = (tabId) => {
     if(tabId === 'categories') loadCategories();
     if(tabId === 'products') { loadCategoriesForSelect(); loadProducts(); }
     if(tabId === 'offers') loadOffers();
+    if(tabId === 'discount-offers') loadDiscountProducts();
     if(tabId === 'banners') loadBanners();
     if(tabId === 'orders') loadOrders('pending');
     if(tabId === 'accepted-orders') loadOrders('accepted');
@@ -83,8 +86,7 @@ window.saveCategory = async () => {
     try {
         let updateData = { name };
         if (file) {
-            const base64Img = await compressAndEncodeImage(file);
-            updateData.image = base64Img;
+            updateData.image = await compressAndEncodeImage(file);
         }
 
         if (id) {
@@ -145,6 +147,8 @@ window.saveProduct = async () => {
     const desc = document.getElementById('prod-desc').value;
     const price = document.getElementById('prod-price').value;
     const mainFile = document.getElementById('prod-img-main').files[0];
+    const intFile1 = document.getElementById('prod-img-internal-1').files[0];
+    const intFile2 = document.getElementById('prod-img-internal-2').files[0];
 
     if (!name || !price) return alert('أكمل البيانات');
     const btn = document.getElementById('btn-save-prod');
@@ -153,9 +157,9 @@ window.saveProduct = async () => {
     try {
         let updateData = { name, category: cat, desc, price: Number(price) };
         
-        if (mainFile) {
-            updateData.image = await compressAndEncodeImage(mainFile);
-        }
+        if (mainFile) updateData.image = await compressAndEncodeImage(mainFile);
+        if (intFile1) updateData.image1 = await compressAndEncodeImage(intFile1);
+        if (intFile2) updateData.image2 = await compressAndEncodeImage(intFile2);
 
         if (id) {
             await updateDoc(doc(db, "products", id), updateData);
@@ -198,6 +202,79 @@ window.editProduct = (id, name, cat, desc, price) => {
     document.getElementById('prod-desc').value = desc;
     document.getElementById('prod-price').value = price;
     document.getElementById('btn-save-prod').innerText = 'تحديث المنتج';
+};
+
+/* دوال العروض والخصومات الجديدة */
+window.loadDiscountProducts = async () => {
+    const selectList = document.getElementById('discount-products-select-list');
+    const discountList = document.getElementById('discounted-products-list');
+    selectList.innerHTML = 'جاري التحميل...';
+    discountList.innerHTML = '';
+
+    const snapshot = await getDocs(collection(db, "products"));
+    allProducts = [];
+    selectList.innerHTML = '';
+    
+    snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        allProducts.push({ id: docSnap.id, ...data });
+
+        if (!data.hasDiscount) {
+            selectList.innerHTML += `
+                <div class="card-3d" style="padding: 10px;">
+                    <input type="checkbox" class="discount-checkbox" value="${docSnap.id}">
+                    <img src="${data.image || ''}" style="height: 80px;">
+                    <div style="font-size: 0.9rem;">${data.name}</div>
+                    <div style="font-weight:bold; color:#333;">${data.price} د.ع</div>
+                </div>
+            `;
+        } else {
+            discountList.innerHTML += `
+                <div class="card-3d">
+                    <img src="${data.image || ''}">
+                    <div class="card-title">${data.name}</div>
+                    <div style="text-decoration: line-through; color: #999;">${data.originalPrice} د.ع</div>
+                    <div style="font-weight:bold; color:#2ecc71;">${data.price} د.ع (خصم ${data.discountPercent}%)</div>
+                    <button class="btn-action remove-discount" onclick="removeDiscount('${docSnap.id}', ${data.originalPrice})">إلغاء الخصم</button>
+                </div>
+            `;
+        }
+    });
+};
+
+window.applyDiscountToSelected = async () => {
+    const percent = document.getElementById('discount-percent').value;
+    if (!percent || percent <= 0 || percent >= 100) return alert('أدخل نسبة خصم صحيحة بين 1 و 99');
+    
+    const checkboxes = document.querySelectorAll('.discount-checkbox:checked');
+    if (checkboxes.length === 0) return alert('اختر منتجات لتطبيق الخصم');
+
+    for (let cb of checkboxes) {
+        const product = allProducts.find(p => p.id === cb.value);
+        if (product) {
+            const originalPrice = product.price;
+            const newPrice = Math.round(originalPrice - (originalPrice * (percent / 100)));
+            await updateDoc(doc(db, "products", product.id), {
+                price: newPrice,
+                originalPrice: originalPrice,
+                hasDiscount: true,
+                discountPercent: percent
+            });
+        }
+    }
+    alert('تم تطبيق الخصم بنجاح');
+    document.getElementById('discount-percent').value = '';
+    loadDiscountProducts();
+};
+
+window.removeDiscount = async (id, originalPrice) => {
+    await updateDoc(doc(db, "products", id), {
+        price: originalPrice,
+        originalPrice: null,
+        hasDiscount: false,
+        discountPercent: null
+    });
+    loadDiscountProducts();
 };
 
 window.saveOffer = async () => {
@@ -289,12 +366,15 @@ window.loadOrders = async (status) => {
             });
         }
 
+        let discountHtml = data.totalDiscount > 0 ? `<div style="color: #2ecc71; font-size: 14px; margin-bottom: 5px;"><strong>قيمة الخصم:</strong> ${data.totalDiscount} د.ع</div>` : '';
+
         list.innerHTML += `
             <div class="card-3d" style="text-align: right; direction: rtl; padding: 20px;">
                 <div class="card-title" style="border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">طلب رقم: ${docSnap.id.slice(0,5)}</div>
                 <div style="color:#555; font-size: 14px; margin-bottom: 5px;"><strong>الاسم:</strong> ${data.name || 'غير متوفر'}</div>
                 <div style="color:#555; font-size: 14px; margin-bottom: 5px;"><strong>رقم الهاتف:</strong> ${data.phone || 'غير متوفر'}</div>
                 <div style="color:#555; font-size: 14px; margin-bottom: 10px;"><strong>العنوان:</strong> ${data.address || 'غير متوفر'}</div>
+                ${discountHtml}
                 
                 <div style="margin:15px 0; max-height: 150px; overflow-y: auto;">
                     <strong style="color:#333; font-size: 14px;">المنتجات المطلوبة:</strong>
