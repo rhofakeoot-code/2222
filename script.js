@@ -1,3 +1,4 @@
+// ملف rhofakeoot-code/admn/admn-ff141ab0b02648480ec92f4979f0e96d4f3ee564/script.js
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, updateDoc, doc, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
@@ -72,6 +73,7 @@ window.switchTab = (tabId) => {
     if(tabId === 'banners') loadBanners();
     if(tabId === 'orders') loadOrders('pending');
     if(tabId === 'accepted-orders') loadOrders('accepted');
+    if(tabId === 'sales') loadSales();
 };
 
 window.saveCategory = async () => {
@@ -204,7 +206,6 @@ window.editProduct = (id, name, cat, desc, price) => {
     document.getElementById('btn-save-prod').innerText = 'تحديث المنتج';
 };
 
-/* دوال العروض والخصومات الجديدة */
 window.loadDiscountProducts = async () => {
     const selectList = document.getElementById('discount-products-select-list');
     const discountList = document.getElementById('discounted-products-list');
@@ -349,6 +350,13 @@ window.loadOrders = async (status) => {
     list.innerHTML = '';
     snapshot.forEach(docSnap => {
         const data = docSnap.data();
+        
+        let orderDate = '';
+        if (data.createdAt) {
+            const d = data.createdAt.toDate();
+            orderDate = d.toLocaleDateString('ar-EG') + ' ' + d.toLocaleTimeString('ar-EG');
+        }
+
         let btns = `<button class="btn-action delete" onclick="deleteDocItem('orders', '${docSnap.id}', null, () => loadOrders('${status}'))">حذف</button>`;
         if (status === 'pending') btns = `<button class="btn-action accept" onclick="acceptOrder('${docSnap.id}')">قبول</button>` + btns;
         
@@ -373,7 +381,8 @@ window.loadOrders = async (status) => {
                 <div class="card-title" style="border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">طلب رقم: ${docSnap.id.slice(0,5)}</div>
                 <div style="color:#555; font-size: 14px; margin-bottom: 5px;"><strong>الاسم:</strong> ${data.name || 'غير متوفر'}</div>
                 <div style="color:#555; font-size: 14px; margin-bottom: 5px;"><strong>رقم الهاتف:</strong> ${data.phone || 'غير متوفر'}</div>
-                <div style="color:#555; font-size: 14px; margin-bottom: 10px;"><strong>العنوان:</strong> ${data.address || 'غير متوفر'}</div>
+                <div style="color:#555; font-size: 14px; margin-bottom: 5px;"><strong>العنوان:</strong> ${data.address || 'غير متوفر'}</div>
+                <div style="color:#555; font-size: 14px; margin-bottom: 10px;"><strong>التاريخ والوقت:</strong> ${orderDate}</div>
                 ${discountHtml}
                 
                 <div style="margin:15px 0; max-height: 150px; overflow-y: auto;">
@@ -388,6 +397,56 @@ window.loadOrders = async (status) => {
             </div>
         `;
     });
+};
+
+window.loadSales = async () => {
+    const list = document.getElementById('sales-list');
+    list.innerHTML = 'جاري التحميل...';
+    const q = query(collection(db, "orders"), where("status", "==", "accepted"));
+    const snapshot = await getDocs(q);
+    
+    let salesByMonth = {};
+    
+    snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.createdAt) {
+            const d = data.createdAt.toDate();
+            const monthYear = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+            if (!salesByMonth[monthYear]) {
+                salesByMonth[monthYear] = 0;
+            }
+            salesByMonth[monthYear] += data.total || 0;
+        }
+    });
+    
+    list.innerHTML = '';
+    for (const [month, total] of Object.entries(salesByMonth)) {
+        list.innerHTML += `
+            <div class="card-3d" style="text-align: center; padding: 20px;">
+                <div class="card-title" style="font-size: 1.2rem; margin-bottom: 15px;">شهر: ${month}</div>
+                <div style="font-weight:bold; color:#2ecc71; font-size: 1.5rem;">${total} د.ع</div>
+            </div>
+        `;
+    }
+    
+    if (Object.keys(salesByMonth).length === 0) {
+        list.innerHTML = '<p style="color: white; text-align: center; width: 100%; font-size: 1.2rem;">لا توجد مبيعات</p>';
+    }
+};
+
+window.resetSales = async () => {
+    if(!confirm('هل أنت متأكد من تصفير جميع المبيعات؟ (سيتم حذف الطلبات المقبولة)')) return;
+    try {
+        const q = query(collection(db, "orders"), where("status", "==", "accepted"));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(async (docSnap) => {
+            await deleteDoc(doc(db, "orders", docSnap.id));
+        });
+        loadSales();
+        loadOrders('accepted');
+    } catch(e) {
+        alert(e.message);
+    }
 };
 
 window.acceptOrder = async (id) => {
