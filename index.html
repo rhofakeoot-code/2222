@@ -37,6 +37,14 @@
                 <div id="accepted-orders-list" class="grid-list"></div>
             </section>
 
+            <section id="sales" class="tab-content">
+                <h2><i class="fa-solid fa-chart-line"></i> المبيعات</h2>
+                <div class="form-glass" style="text-align: center; margin-bottom: 20px;">
+                    <button class="btn-3d" style="background: #ff3e3e;" onclick="resetSales()">تصفير المبيعات <i class="fa-solid fa-trash"></i></button>
+                </div>
+                <div id="sales-list" class="grid-list"></div>
+            </section>
+
             <section id="products" class="tab-content">
                 <h2><i class="fa-solid fa-tags"></i> إدارة المنتجات</h2>
                 <div class="form-glass">
@@ -124,6 +132,7 @@
         <nav class="sidebar glass-panel">
             <div class="nav-item active" onclick="switchTab('orders')"><i class="fa-solid fa-box-open"></i> الطلبات</div>
             <div class="nav-item" onclick="switchTab('accepted-orders')"><i class="fa-solid fa-check-double"></i> المقبولة</div>
+            <div class="nav-item" onclick="switchTab('sales')"><i class="fa-solid fa-chart-line"></i> المبيعات</div>
             <div class="nav-item" onclick="switchTab('products')"><i class="fa-solid fa-tags"></i> منتج</div>
             <div class="nav-item" onclick="switchTab('offers')"><i class="fa-solid fa-bullhorn"></i> بنرات</div>
             <div class="nav-item" onclick="switchTab('discount-offers')"><i class="fa-solid fa-percent"></i> العروض</div>
