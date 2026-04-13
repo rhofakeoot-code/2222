@@ -25,20 +25,6 @@
 
     <div id="app-content" style="display: none;" class="admin-container">
         
-        <nav class="sidebar glass-panel">
-            <div class="logo">
-                <i class="fa-solid fa-apple-whole" style="color: #FFF;"></i> تفاحة
-            </div>
-            <div class="nav-items">
-                <div class="nav-item active" onclick="switchTab('orders')"><i class="fa-solid fa-box-open"></i> الطلبات</div>
-                <div class="nav-item" onclick="switchTab('accepted-orders')"><i class="fa-solid fa-check-double"></i> الطلبات المقبولة</div>
-                <div class="nav-item" onclick="switchTab('products')"><i class="fa-solid fa-tags"></i> رفع منتج</div>
-                <div class="nav-item" onclick="switchTab('offers')"><i class="fa-solid fa-bullhorn"></i> العروض</div>
-                <div class="nav-item" onclick="switchTab('categories')"><i class="fa-solid fa-layer-group"></i> إنشاء قسم</div>
-                <div class="nav-item" onclick="switchTab('banners')"><i class="fa-solid fa-images"></i> البنر</div>
-            </div>
-        </nav>
-
         <main class="main-content glass-panel">
             
             <section id="orders" class="tab-content active">
@@ -64,8 +50,12 @@
                     <textarea id="prod-desc" placeholder="وصف المنتج" class="input-3d"></textarea>
                     <input type="number" id="prod-price" placeholder="السعر" class="input-3d">
                     <div class="input-3d">
-                        <label>اختيار صورتين داخلية للمنتج</label>
-                        <input type="file" id="prod-img-internal" accept="image/*" multiple>
+                        <label>الصورة الداخلية الأولى</label>
+                        <input type="file" id="prod-img-internal-1" accept="image/*">
+                    </div>
+                    <div class="input-3d">
+                        <label>الصورة الداخلية الثانية</label>
+                        <input type="file" id="prod-img-internal-2" accept="image/*">
                     </div>
                     <button class="btn-3d" id="btn-save-prod" onclick="saveProduct()">حفظ المنتج <i class="fa-solid fa-save"></i></button>
                 </div>
@@ -74,7 +64,7 @@
             </section>
 
             <section id="offers" class="tab-content">
-                <h2><i class="fa-solid fa-bullhorn"></i> إدارة العروض</h2>
+                <h2><i class="fa-solid fa-bullhorn"></i> إدارة بنرات العروض</h2>
                 <div class="form-glass">
                     <div class="input-3d">
                         <label>رفع صورة العروض</label>
@@ -84,6 +74,21 @@
                 </div>
                 <h3 style="margin-top:20px;">العروض المضافة</h3>
                 <div id="offers-list" class="grid-list"></div>
+            </section>
+
+            <section id="discount-offers" class="tab-content">
+                <h2><i class="fa-solid fa-percent"></i> العروض والخصومات</h2>
+                <div class="form-glass">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="number" id="discount-percent" placeholder="نسبة الخصم %" class="input-3d" style="width: 50%;">
+                        <button class="btn-3d" style="width: 50%;" onclick="applyDiscountToSelected()">حفظ <i class="fa-solid fa-check"></i></button>
+                    </div>
+                    <h3 style="margin-top: 15px; color: #333;">اختر المنتجات لتطبيق الخصم:</h3>
+                    <div id="discount-products-select-list" class="grid-list" style="max-height: 300px; overflow-y: auto;"></div>
+                </div>
+
+                <h3 style="margin-top:30px;">الخصومات المتاحة</h3>
+                <div id="discounted-products-list" class="grid-list"></div>
             </section>
 
             <section id="categories" class="tab-content">
@@ -115,6 +120,16 @@
             </section>
 
         </main>
+
+        <nav class="sidebar glass-panel">
+            <div class="nav-item active" onclick="switchTab('orders')"><i class="fa-solid fa-box-open"></i> الطلبات</div>
+            <div class="nav-item" onclick="switchTab('accepted-orders')"><i class="fa-solid fa-check-double"></i> المقبولة</div>
+            <div class="nav-item" onclick="switchTab('products')"><i class="fa-solid fa-tags"></i> منتج</div>
+            <div class="nav-item" onclick="switchTab('offers')"><i class="fa-solid fa-bullhorn"></i> بنرات</div>
+            <div class="nav-item" onclick="switchTab('discount-offers')"><i class="fa-solid fa-percent"></i> العروض</div>
+            <div class="nav-item" onclick="switchTab('categories')"><i class="fa-solid fa-layer-group"></i> قسم</div>
+            <div class="nav-item" onclick="switchTab('banners')"><i class="fa-solid fa-images"></i> البنر</div>
+        </nav>
     </div>
 
     <script type="module" src="script.js"></script>
