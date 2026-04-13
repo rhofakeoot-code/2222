@@ -13,13 +13,24 @@ const CONFIG = {
     }
 };
 
-const pass = prompt('الرجاء إدخال الرمز:');
-if (pass !== '1001') {
-    document.body.innerHTML = '<h1 style="color:white; text-align:center; margin-top:20vh; text-shadow:2px 2px 5px #000;">غير مصرح الدخول</h1>';
-    throw new Error('Unauthorized');
-} else {
-    document.getElementById('app-content').style.display = 'flex';
-}
+// تصفير البيانات المحلية للمتجر
+const categories = [];
+const products = [];
+
+// التحقق من رمز الدخول
+window.verifyAdmin = () => {
+    const pass = document.getElementById('admin-pass').value;
+    if (pass === '1001') {
+        document.getElementById('login-overlay').style.opacity = '0';
+        setTimeout(() => {
+            document.getElementById('login-overlay').style.display = 'none';
+            document.getElementById('app-content').style.display = 'flex';
+            loadOrders('pending');
+        }, 500);
+    } else {
+        alert('رمز الدخول غير صحيح!');
+    }
+};
 
 const app = initializeApp(CONFIG.FIREBASE_CONFIG);
 const db = getFirestore(app);
@@ -38,72 +49,45 @@ window.switchTab = (tabId) => {
     if(tabId === 'accepted-orders') loadOrders('accepted');
 };
 
-async function compressImage(file, quality = 0.7) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            canvas.toBlob(blob => resolve(blob), 'image/jpeg', quality);
-        };
-        img.onerror = error => reject(error);
-    });
-}
-
 async function uploadToImgBB(file) {
-    const compressedBlob = await compressImage(file, 0.7);
     const formData = new FormData();
-    formData.append('image', compressedBlob, 'image.jpg');
+    formData.append('image', file);
+    
+    // استخدام الرابط الصحيح لإصلاح Failed to fetch
     const response = await fetch(`https://api.imgbb.com/1/upload?key=${CONFIG.IMGBB_API_KEY}`, {
         method: 'POST',
         body: formData
     });
+    
     const data = await response.json();
     if (data.success) {
         return { url: data.data.url, deleteUrl: data.data.delete_url };
     } else {
-        throw new Error('فشل الرفع');
-    }
-}
-
-async function deleteFromImgBB(deleteUrl) {
-    if (deleteUrl) {
-        try { await fetch(deleteUrl); } catch (e) { console.log(e); }
+        throw new Error('فشل الرفع: ' + data.error.message);
     }
 }
 
 window.saveCategory = async () => {
     const id = document.getElementById('cat-id').value;
     const name = document.getElementById('cat-name').value;
-    const files = document.getElementById('cat-img').files;
+    const file = document.getElementById('cat-img').files[0];
 
-    if (!name) return alert('الرجاء إدخال اسم القسم');
-    
+    if (!name) return alert('أدخل اسم القسم');
     const btn = document.getElementById('btn-save-cat');
-    btn.innerText = 'جاري الحفظ...';
+    btn.innerText = 'جاري الرفع...';
 
     try {
-        let imgUrls = [];
-        if (files.length > 0) {
-            for(let file of files) {
-                const uploaded = await uploadToImgBB(file);
-                imgUrls.push(uploaded);
-            }
+        let updateData = { name };
+        if (file) {
+            const uploaded = await uploadToImgBB(file);
+            updateData.images = [uploaded];
         }
 
         if (id) {
-            let updateData = { name };
-            if (imgUrls.length > 0) updateData.images = imgUrls;
             await updateDoc(doc(db, "categories", id), updateData);
-            alert('تم التعديل');
         } else {
-            if (imgUrls.length === 0) return alert('الرجاء رفع صورة');
-            await addDoc(collection(db, "categories"), { name, images: imgUrls, createdAt: serverTimestamp() });
-            alert('تم الحفظ');
+            if (!file) throw new Error('اختر صورة للقسم الجديد');
+            await addDoc(collection(db, "categories"), { ...updateData, createdAt: serverTimestamp() });
         }
 
         document.getElementById('cat-id').value = '';
@@ -111,8 +95,8 @@ window.saveCategory = async () => {
         document.getElementById('cat-img').value = '';
         btn.innerHTML = 'حفظ القسم <i class="fa-solid fa-save"></i>';
         loadCategories();
-    } catch (error) {
-        alert(error.message);
+    } catch (e) {
+        alert(e.message);
         btn.innerHTML = 'حفظ القسم <i class="fa-solid fa-save"></i>';
     }
 };
@@ -124,16 +108,13 @@ window.loadCategories = async () => {
     list.innerHTML = '';
     snapshot.forEach(docSnap => {
         const data = docSnap.data();
-        const img = data.images && data.images[0] ? data.images[0].url : '';
-        const id = docSnap.id;
+        const img = data.images ? data.images[0].url : '';
         list.innerHTML += `
             <div class="card-3d">
                 <img src="${img}">
                 <div class="card-title">${data.name}</div>
-                <div>
-                    <button class="btn-action edit" onclick="editCategory('${id}', '${data.name}')">تعديل <i class="fa-solid fa-pen"></i></button>
-                    <button class="btn-action delete" onclick="deleteDocItem('categories', '${id}', '${data.images ? data.images[0].deleteUrl : ''}', loadCategories)">حذف <i class="fa-solid fa-trash"></i></button>
-                </div>
+                <button class="btn-action edit" onclick="editCategory('${docSnap.id}', '${data.name}')">تعديل</button>
+                <button class="btn-action delete" onclick="deleteDocItem('categories', '${docSnap.id}', '${data.images ? data.images[0].deleteUrl : ''}', loadCategories)">حذف</button>
             </div>
         `;
     });
@@ -142,8 +123,7 @@ window.loadCategories = async () => {
 window.editCategory = (id, name) => {
     document.getElementById('cat-id').value = id;
     document.getElementById('cat-name').value = name;
-    document.getElementById('btn-save-cat').innerHTML = 'تحديث القسم <i class="fa-solid fa-pen"></i>';
-    window.scrollTo(0, 0);
+    document.getElementById('btn-save-cat').innerText = 'تحديث القسم';
 };
 
 window.loadCategoriesForSelect = async () => {
@@ -151,8 +131,7 @@ window.loadCategoriesForSelect = async () => {
     select.innerHTML = '<option value="">اختر القسم</option>';
     const snapshot = await getDocs(collection(db, "categories"));
     snapshot.forEach(docSnap => {
-        const data = docSnap.data();
-        select.innerHTML += `<option value="${data.name}">${data.name}</option>`;
+        select.innerHTML += `<option value="${docSnap.data().name}">${docSnap.data().name}</option>`;
     });
 };
 
@@ -162,48 +141,37 @@ window.saveProduct = async () => {
     const cat = document.getElementById('prod-cat').value;
     const desc = document.getElementById('prod-desc').value;
     const price = document.getElementById('prod-price').value;
-    const mainFiles = document.getElementById('prod-img-main').files;
+    const mainFile = document.getElementById('prod-img-main').files[0];
     const internalFiles = document.getElementById('prod-img-internal').files;
 
-    if (!name || !cat || !desc || !price) return alert('الرجاء إدخال كافة التفاصيل');
-
+    if (!name || !price) return alert('أكمل البيانات');
     const btn = document.getElementById('btn-save-prod');
     btn.innerText = 'جاري الحفظ...';
 
     try {
-        let mainImgs = [];
-        let internalImgs = [];
-
-        if (mainFiles.length > 0) {
-            for(let f of mainFiles) mainImgs.push(await uploadToImgBB(f));
+        let updateData = { name, category: cat, desc, price: Number(price) };
+        
+        if (mainFile) {
+            updateData.mainImages = [await uploadToImgBB(mainFile)];
         }
+        
         if (internalFiles.length > 0) {
-            for(let f of internalFiles) internalImgs.push(await uploadToImgBB(f));
+            let internals = [];
+            for(let f of internalFiles) internals.push(await uploadToImgBB(f));
+            updateData.internalImages = internals;
         }
 
         if (id) {
-            let updateData = { name, category: cat, desc, price: Number(price) };
-            if (mainImgs.length > 0) updateData.mainImages = mainImgs;
-            if (internalImgs.length > 0) updateData.internalImages = internalImgs;
             await updateDoc(doc(db, "products", id), updateData);
-            alert('تم التعديل');
         } else {
-            if (mainImgs.length === 0 || internalImgs.length === 0) return alert('الرجاء رفع جميع الصور المطلوبة');
-            await addDoc(collection(db, "products"), { name, category: cat, desc, price: Number(price), mainImages: mainImgs, internalImages: internalImgs, createdAt: serverTimestamp() });
-            alert('تم الحفظ');
+            await addDoc(collection(db, "products"), { ...updateData, createdAt: serverTimestamp() });
         }
 
-        document.getElementById('prod-id').value = '';
-        document.getElementById('prod-name').value = '';
-        document.getElementById('prod-cat').value = '';
-        document.getElementById('prod-desc').value = '';
-        document.getElementById('prod-price').value = '';
-        document.getElementById('prod-img-main').value = '';
-        document.getElementById('prod-img-internal').value = '';
+        alert('تم بنجاح');
+        switchTab('products');
         btn.innerHTML = 'حفظ المنتج <i class="fa-solid fa-save"></i>';
-        loadProducts();
-    } catch (error) {
-        alert(error.message);
+    } catch (e) {
+        alert(e.message);
         btn.innerHTML = 'حفظ المنتج <i class="fa-solid fa-save"></i>';
     }
 };
@@ -215,18 +183,13 @@ window.loadProducts = async () => {
     list.innerHTML = '';
     snapshot.forEach(docSnap => {
         const data = docSnap.data();
-        const img = data.mainImages && data.mainImages[0] ? data.mainImages[0].url : '';
-        const delUrl = data.mainImages && data.mainImages[0] ? data.mainImages[0].deleteUrl : '';
-        const id = docSnap.id;
         list.innerHTML += `
             <div class="card-3d">
-                <img src="${img}">
+                <img src="${data.mainImages ? data.mainImages[0].url : ''}">
                 <div class="card-title">${data.name}</div>
-                <div style="color:#555; font-weight:bold;">${data.price} د.ع - ${data.category}</div>
-                <div>
-                    <button class="btn-action edit" onclick="editProduct('${id}', '${data.name}', '${data.category}', '${data.desc}', '${data.price}')">تعديل <i class="fa-solid fa-pen"></i></button>
-                    <button class="btn-action delete" onclick="deleteDocItem('products', '${id}', '${delUrl}', loadProducts)">حذف <i class="fa-solid fa-trash"></i></button>
-                </div>
+                <div style="font-weight:bold; color:#FF6B6B;">${data.price} د.ع</div>
+                <button class="btn-action edit" onclick="editProduct('${docSnap.id}', '${data.name}', '${data.category}', '${data.desc}', '${data.price}')">تعديل</button>
+                <button class="btn-action delete" onclick="deleteDocItem('products', '${docSnap.id}', '${data.mainImages ? data.mainImages[0].deleteUrl : ''}', loadProducts)">حذف</button>
             </div>
         `;
     });
@@ -238,28 +201,23 @@ window.editProduct = (id, name, cat, desc, price) => {
     document.getElementById('prod-cat').value = cat;
     document.getElementById('prod-desc').value = desc;
     document.getElementById('prod-price').value = price;
-    document.getElementById('btn-save-prod').innerHTML = 'تحديث المنتج <i class="fa-solid fa-pen"></i>';
-    window.scrollTo(0, 0);
+    document.getElementById('btn-save-prod').innerText = 'تحديث المنتج';
 };
 
 window.saveOffer = async () => {
     const files = document.getElementById('offer-img').files;
-    if (files.length === 0) return alert('الرجاء اختيار صورة العرض');
+    if (files.length === 0) return alert('اختر صور');
     const btn = document.getElementById('btn-save-offer');
-    btn.innerText = 'جاري الحفظ...';
+    btn.innerText = 'جاري الرفع...';
     try {
-        for(let file of files) {
-            const uploaded = await uploadToImgBB(file);
-            await addDoc(collection(db, "offers"), { image: uploaded, createdAt: serverTimestamp() });
+        for(let f of files) {
+            const up = await uploadToImgBB(f);
+            await addDoc(collection(db, "offers"), { image: up, createdAt: serverTimestamp() });
         }
-        alert('تم حفظ العروض');
-        document.getElementById('offer-img').value = '';
-        btn.innerHTML = 'حفظ العرض <i class="fa-solid fa-save"></i>';
+        alert('تم الحفظ');
         loadOffers();
-    } catch(e) {
-        alert(e.message);
-        btn.innerHTML = 'حفظ العرض <i class="fa-solid fa-save"></i>';
-    }
+    } catch(e) { alert(e.message); }
+    btn.innerHTML = 'حفظ العرض <i class="fa-solid fa-save"></i>';
 };
 
 window.loadOffers = async () => {
@@ -272,7 +230,7 @@ window.loadOffers = async () => {
         list.innerHTML += `
             <div class="card-3d">
                 <img src="${data.image.url}">
-                <button class="btn-action delete" style="margin-top:10px;" onclick="deleteDocItem('offers', '${docSnap.id}', '${data.image.deleteUrl}', loadOffers)">حذف العرض <i class="fa-solid fa-trash"></i></button>
+                <button class="btn-action delete" onclick="deleteDocItem('offers', '${docSnap.id}', '${data.image.deleteUrl}', loadOffers)">حذف</button>
             </div>
         `;
     });
@@ -280,22 +238,18 @@ window.loadOffers = async () => {
 
 window.saveBanner = async () => {
     const files = document.getElementById('banner-img').files;
-    if (files.length === 0) return alert('الرجاء اختيار صورة للبنر');
+    if (files.length === 0) return alert('اختر صور');
     const btn = document.getElementById('btn-save-banner');
-    btn.innerText = 'جاري الحفظ...';
+    btn.innerText = 'جاري الرفع...';
     try {
-        for(let file of files) {
-            const uploaded = await uploadToImgBB(file);
-            await addDoc(collection(db, "banners"), { image: uploaded, createdAt: serverTimestamp() });
+        for(let f of files) {
+            const up = await uploadToImgBB(f);
+            await addDoc(collection(db, "banners"), { image: up, createdAt: serverTimestamp() });
         }
-        alert('تم حفظ البنرات');
-        document.getElementById('banner-img').value = '';
-        btn.innerHTML = 'حفظ البنر <i class="fa-solid fa-save"></i>';
+        alert('تم الحفظ');
         loadBanners();
-    } catch(e) {
-        alert(e.message);
-        btn.innerHTML = 'حفظ البنر <i class="fa-solid fa-save"></i>';
-    }
+    } catch(e) { alert(e.message); }
+    btn.innerHTML = 'حفظ البنر <i class="fa-solid fa-save"></i>';
 };
 
 window.loadBanners = async () => {
@@ -308,7 +262,7 @@ window.loadBanners = async () => {
         list.innerHTML += `
             <div class="card-3d">
                 <img src="${data.image.url}">
-                <button class="btn-action delete" style="margin-top:10px;" onclick="deleteDocItem('banners', '${docSnap.id}', '${data.image.deleteUrl}', loadBanners)">حذف البنر <i class="fa-solid fa-trash"></i></button>
+                <button class="btn-action delete" onclick="deleteDocItem('banners', '${docSnap.id}', '${data.image.deleteUrl}', loadBanners)">حذف</button>
             </div>
         `;
     });
@@ -322,15 +276,13 @@ window.loadOrders = async (status) => {
     list.innerHTML = '';
     snapshot.forEach(docSnap => {
         const data = docSnap.data();
-        let btns = `<button class="btn-action delete" onclick="deleteDocItem('orders', '${docSnap.id}', '', () => loadOrders('${status}'))">حذف <i class="fa-solid fa-trash"></i></button>`;
-        if (status === 'pending') {
-            btns = `<button class="btn-action accept" onclick="acceptOrder('${docSnap.id}')">قبول الطلب <i class="fa-solid fa-check"></i></button>` + btns;
-        }
+        let btns = `<button class="btn-action delete" onclick="deleteDocItem('orders', '${docSnap.id}', '', () => loadOrders('${status}'))">حذف</button>`;
+        if (status === 'pending') btns = `<button class="btn-action accept" onclick="acceptOrder('${docSnap.id}')">قبول</button>` + btns;
         list.innerHTML += `
             <div class="card-3d">
-                <div class="card-title">الطلب: ${docSnap.id}</div>
-                <div style="color:#555;">الاسم: ${data.name || 'غير محدد'}</div>
-                <div style="color:#555;">السعر الإجمالي: ${data.total || 0} د.ع</div>
+                <div class="card-title">طلب رقم: ${docSnap.id.slice(0,5)}</div>
+                <div style="color:#555;">الاسم: ${data.name}</div>
+                <div style="font-weight:bold;">${data.total} د.ع</div>
                 <div style="margin-top:10px;">${btns}</div>
             </div>
         `;
@@ -338,22 +290,15 @@ window.loadOrders = async (status) => {
 };
 
 window.acceptOrder = async (id) => {
-    if(!confirm('قبول الطلب؟')) return;
     await updateDoc(doc(db, "orders", id), { status: 'accepted' });
     loadOrders('pending');
 };
 
-window.deleteDocItem = async (col, id, deleteUrl, callback) => {
-    if(!confirm('هل أنت متأكد من الحذف؟')) return;
+window.deleteDocItem = async (col, id, delUrl, cb) => {
+    if(!confirm('حذف؟')) return;
     try {
-        if(deleteUrl) await deleteFromImgBB(deleteUrl);
+        if(delUrl) await fetch(delUrl).catch(() => {});
         await deleteDoc(doc(db, col, id));
-        callback();
-    } catch (e) {
-        alert(e.message);
-    }
-};
-
-window.onload = () => {
-    loadOrders('pending');
+        cb();
+    } catch(e) { alert(e.message); }
 };
