@@ -15,7 +15,6 @@ const CONFIG = {
 const app = initializeApp(CONFIG.FIREBASE_CONFIG);
 const db = getFirestore(app);
 
-// دالة ضغط الصورة وتحويلها إلى Base64 بنسبة 50%
 async function compressAndEncodeImage(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -31,7 +30,6 @@ async function compressAndEncodeImage(file) {
                 canvas.height = img.height * scaleSize;
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                // ضغط الصورة بنسبة 50% (0.5)
                 const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
                 resolve(dataUrl);
             };
@@ -57,8 +55,13 @@ window.verifyAdmin = () => {
 window.switchTab = (tabId) => {
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+    
     document.getElementById(tabId).classList.add('active');
-    event.currentTarget.classList.add('active');
+    
+    const activeNavItem = document.querySelector(`.nav-item[onclick*="switchTab('${tabId}')"]`);
+    if (activeNavItem) {
+        activeNavItem.classList.add('active');
+    }
 
     if(tabId === 'categories') loadCategories();
     if(tabId === 'products') { loadCategoriesForSelect(); loadProducts(); }
@@ -271,12 +274,37 @@ window.loadOrders = async (status) => {
         const data = docSnap.data();
         let btns = `<button class="btn-action delete" onclick="deleteDocItem('orders', '${docSnap.id}', null, () => loadOrders('${status}'))">حذف</button>`;
         if (status === 'pending') btns = `<button class="btn-action accept" onclick="acceptOrder('${docSnap.id}')">قبول</button>` + btns;
+        
+        let itemsHtml = '';
+        if(data.items && data.items.length > 0) {
+            data.items.forEach(item => {
+                itemsHtml += `
+                <div style="display:flex; align-items:center; gap:10px; margin-top:8px; border-bottom:1px solid #ddd; padding-bottom:8px; background: rgba(255,255,255,0.5); padding: 5px; border-radius: 8px;">
+                    <img src="${item.image}" style="width:50px; height:50px; object-fit:cover; border-radius:5px; border: 1px solid #ccc;">
+                    <div style="text-align: right; line-height: 1.2;">
+                        <span style="font-size:13px; font-weight:bold; color:#333;">${item.name}</span><br>
+                        <span style="font-size:12px; color:#FF6B6B;">الكمية: ${item.qty} | السعر: ${item.price} د.ع</span>
+                    </div>
+                </div>`;
+            });
+        }
+
         list.innerHTML += `
-            <div class="card-3d">
-                <div class="card-title">طلب رقم: ${docSnap.id.slice(0,5)}</div>
-                <div style="color:#555;">الاسم: ${data.name}</div>
-                <div style="font-weight:bold;">${data.total} د.ع</div>
-                <div style="margin-top:10px;">${btns}</div>
+            <div class="card-3d" style="text-align: right; direction: rtl; padding: 20px;">
+                <div class="card-title" style="border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 10px;">طلب رقم: ${docSnap.id.slice(0,5)}</div>
+                <div style="color:#555; font-size: 14px; margin-bottom: 5px;"><strong>الاسم:</strong> ${data.name || 'غير متوفر'}</div>
+                <div style="color:#555; font-size: 14px; margin-bottom: 5px;"><strong>رقم الهاتف:</strong> ${data.phone || 'غير متوفر'}</div>
+                <div style="color:#555; font-size: 14px; margin-bottom: 10px;"><strong>العنوان:</strong> ${data.address || 'غير متوفر'}</div>
+                
+                <div style="margin:15px 0; max-height: 150px; overflow-y: auto;">
+                    <strong style="color:#333; font-size: 14px;">المنتجات المطلوبة:</strong>
+                    ${itemsHtml || '<p style="font-size: 12px; color: #999;">لا توجد منتجات مسجلة</p>'}
+                </div>
+                
+                <div style="font-weight:bold; color:#FF6B6B; font-size: 16px; text-align: center; margin-top: 15px; border-top: 2px solid #eee; padding-top: 10px;">
+                    الإجمالي: ${data.total || '0'} د.ع
+                </div>
+                <div style="margin-top:15px; text-align:center;">${btns}</div>
             </div>
         `;
     });
