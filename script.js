@@ -2,7 +2,6 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/fireba
 import { getFirestore, collection, addDoc, getDocs, deleteDoc, updateDoc, doc, serverTimestamp, query, where } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 
 const CONFIG = {
-    IMGBB_API_KEY: "7fa910ddeffb3ce5937e0b4ff50246c8",
     FIREBASE_CONFIG: {
         apiKey: "AIzaSyAPiiVfmJdGHje0gittK-7yFTYNTQNY6Fk",
         authDomain: "basjfk-58536.firebaseapp.com",
@@ -13,11 +12,34 @@ const CONFIG = {
     }
 };
 
-// تصفير البيانات المحلية للمتجر
-const categories = [];
-const products = [];
+const app = initializeApp(CONFIG.FIREBASE_CONFIG);
+const db = getFirestore(app);
 
-// التحقق من رمز الدخول
+// دالة ضغط الصورة وتحويلها إلى Base64 بنسبة 50%
+async function compressAndEncodeImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 600; 
+                const scaleSize = MAX_WIDTH / img.width;
+                canvas.width = MAX_WIDTH;
+                canvas.height = img.height * scaleSize;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                // ضغط الصورة بنسبة 50% (0.5)
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+                resolve(dataUrl);
+            };
+        };
+        reader.onerror = error => reject(error);
+    });
+}
+
 window.verifyAdmin = () => {
     const pass = document.getElementById('admin-pass').value;
     if (pass === '1001') {
@@ -31,9 +53,6 @@ window.verifyAdmin = () => {
         alert('رمز الدخول غير صحيح!');
     }
 };
-
-const app = initializeApp(CONFIG.FIREBASE_CONFIG);
-const db = getFirestore(app);
 
 window.switchTab = (tabId) => {
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
@@ -49,24 +68,6 @@ window.switchTab = (tabId) => {
     if(tabId === 'accepted-orders') loadOrders('accepted');
 };
 
-async function uploadToImgBB(file) {
-    const formData = new FormData();
-    formData.append('image', file);
-    
-    // استخدام الرابط الصحيح لإصلاح Failed to fetch
-    const response = await fetch(`https://api.imgbb.com/1/upload?key=${CONFIG.IMGBB_API_KEY}`, {
-        method: 'POST',
-        body: formData
-    });
-    
-    const data = await response.json();
-    if (data.success) {
-        return { url: data.data.url, deleteUrl: data.data.delete_url };
-    } else {
-        throw new Error('فشل الرفع: ' + data.error.message);
-    }
-}
-
 window.saveCategory = async () => {
     const id = document.getElementById('cat-id').value;
     const name = document.getElementById('cat-name').value;
@@ -74,13 +75,13 @@ window.saveCategory = async () => {
 
     if (!name) return alert('أدخل اسم القسم');
     const btn = document.getElementById('btn-save-cat');
-    btn.innerText = 'جاري الرفع...';
+    btn.innerText = 'جاري المعالجة...';
 
     try {
         let updateData = { name };
         if (file) {
-            const uploaded = await uploadToImgBB(file);
-            updateData.images = [uploaded];
+            const base64Img = await compressAndEncodeImage(file);
+            updateData.image = base64Img;
         }
 
         if (id) {
@@ -108,13 +109,12 @@ window.loadCategories = async () => {
     list.innerHTML = '';
     snapshot.forEach(docSnap => {
         const data = docSnap.data();
-        const img = data.images ? data.images[0].url : '';
         list.innerHTML += `
             <div class="card-3d">
-                <img src="${img}">
+                <img src="${data.image || ''}">
                 <div class="card-title">${data.name}</div>
                 <button class="btn-action edit" onclick="editCategory('${docSnap.id}', '${data.name}')">تعديل</button>
-                <button class="btn-action delete" onclick="deleteDocItem('categories', '${docSnap.id}', '${data.images ? data.images[0].deleteUrl : ''}', loadCategories)">حذف</button>
+                <button class="btn-action delete" onclick="deleteDocItem('categories', '${docSnap.id}', null, loadCategories)">حذف</button>
             </div>
         `;
     });
@@ -142,7 +142,6 @@ window.saveProduct = async () => {
     const desc = document.getElementById('prod-desc').value;
     const price = document.getElementById('prod-price').value;
     const mainFile = document.getElementById('prod-img-main').files[0];
-    const internalFiles = document.getElementById('prod-img-internal').files;
 
     if (!name || !price) return alert('أكمل البيانات');
     const btn = document.getElementById('btn-save-prod');
@@ -152,13 +151,7 @@ window.saveProduct = async () => {
         let updateData = { name, category: cat, desc, price: Number(price) };
         
         if (mainFile) {
-            updateData.mainImages = [await uploadToImgBB(mainFile)];
-        }
-        
-        if (internalFiles.length > 0) {
-            let internals = [];
-            for(let f of internalFiles) internals.push(await uploadToImgBB(f));
-            updateData.internalImages = internals;
+            updateData.image = await compressAndEncodeImage(mainFile);
         }
 
         if (id) {
@@ -185,11 +178,11 @@ window.loadProducts = async () => {
         const data = docSnap.data();
         list.innerHTML += `
             <div class="card-3d">
-                <img src="${data.mainImages ? data.mainImages[0].url : ''}">
+                <img src="${data.image || ''}">
                 <div class="card-title">${data.name}</div>
                 <div style="font-weight:bold; color:#FF6B6B;">${data.price} د.ع</div>
                 <button class="btn-action edit" onclick="editProduct('${docSnap.id}', '${data.name}', '${data.category}', '${data.desc}', '${data.price}')">تعديل</button>
-                <button class="btn-action delete" onclick="deleteDocItem('products', '${docSnap.id}', '${data.mainImages ? data.mainImages[0].deleteUrl : ''}', loadProducts)">حذف</button>
+                <button class="btn-action delete" onclick="deleteDocItem('products', '${docSnap.id}', null, loadProducts)">حذف</button>
             </div>
         `;
     });
@@ -208,11 +201,11 @@ window.saveOffer = async () => {
     const files = document.getElementById('offer-img').files;
     if (files.length === 0) return alert('اختر صور');
     const btn = document.getElementById('btn-save-offer');
-    btn.innerText = 'جاري الرفع...';
+    btn.innerText = 'جاري المعالجة...';
     try {
         for(let f of files) {
-            const up = await uploadToImgBB(f);
-            await addDoc(collection(db, "offers"), { image: up, createdAt: serverTimestamp() });
+            const base64Img = await compressAndEncodeImage(f);
+            await addDoc(collection(db, "offers"), { image: base64Img, createdAt: serverTimestamp() });
         }
         alert('تم الحفظ');
         loadOffers();
@@ -229,8 +222,8 @@ window.loadOffers = async () => {
         const data = docSnap.data();
         list.innerHTML += `
             <div class="card-3d">
-                <img src="${data.image.url}">
-                <button class="btn-action delete" onclick="deleteDocItem('offers', '${docSnap.id}', '${data.image.deleteUrl}', loadOffers)">حذف</button>
+                <img src="${data.image}">
+                <button class="btn-action delete" onclick="deleteDocItem('offers', '${docSnap.id}', null, loadOffers)">حذف</button>
             </div>
         `;
     });
@@ -240,11 +233,11 @@ window.saveBanner = async () => {
     const files = document.getElementById('banner-img').files;
     if (files.length === 0) return alert('اختر صور');
     const btn = document.getElementById('btn-save-banner');
-    btn.innerText = 'جاري الرفع...';
+    btn.innerText = 'جاري المعالجة...';
     try {
         for(let f of files) {
-            const up = await uploadToImgBB(f);
-            await addDoc(collection(db, "banners"), { image: up, createdAt: serverTimestamp() });
+            const base64Img = await compressAndEncodeImage(f);
+            await addDoc(collection(db, "banners"), { image: base64Img, createdAt: serverTimestamp() });
         }
         alert('تم الحفظ');
         loadBanners();
@@ -261,8 +254,8 @@ window.loadBanners = async () => {
         const data = docSnap.data();
         list.innerHTML += `
             <div class="card-3d">
-                <img src="${data.image.url}">
-                <button class="btn-action delete" onclick="deleteDocItem('banners', '${docSnap.id}', '${data.image.deleteUrl}', loadBanners)">حذف</button>
+                <img src="${data.image}">
+                <button class="btn-action delete" onclick="deleteDocItem('banners', '${docSnap.id}', null, loadBanners)">حذف</button>
             </div>
         `;
     });
@@ -276,7 +269,7 @@ window.loadOrders = async (status) => {
     list.innerHTML = '';
     snapshot.forEach(docSnap => {
         const data = docSnap.data();
-        let btns = `<button class="btn-action delete" onclick="deleteDocItem('orders', '${docSnap.id}', '', () => loadOrders('${status}'))">حذف</button>`;
+        let btns = `<button class="btn-action delete" onclick="deleteDocItem('orders', '${docSnap.id}', null, () => loadOrders('${status}'))">حذف</button>`;
         if (status === 'pending') btns = `<button class="btn-action accept" onclick="acceptOrder('${docSnap.id}')">قبول</button>` + btns;
         list.innerHTML += `
             <div class="card-3d">
@@ -294,10 +287,9 @@ window.acceptOrder = async (id) => {
     loadOrders('pending');
 };
 
-window.deleteDocItem = async (col, id, delUrl, cb) => {
+window.deleteDocItem = async (col, id, unused, cb) => {
     if(!confirm('حذف؟')) return;
     try {
-        if(delUrl) await fetch(delUrl).catch(() => {});
         await deleteDoc(doc(db, col, id));
         cb();
     } catch(e) { alert(e.message); }
